@@ -1,0 +1,48 @@
+default:
+  tags:
+    - internal
+
+variables:
+  BUILD_IMAGE_NAME: "$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG:$CI_COMMIT_SHA"
+  RELEASE_IMAGE_NAME: "$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG"
+
+stages:
+  - lint
+  - build
+  - release
+
+dockerfile check:
+  stage: lint
+  image: hadolint/hadolint:latest-alpine
+  before_script:
+    - hadolint --version
+  script:
+    - hadolint Dockerfile
+
+.dind:
+  services:
+    - docker:20.10.6-dind
+  image: docker:20.10.6
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+
+build:
+  extends:
+    - .dind
+  stage: build
+  script:
+    - docker image build --tag "$BUILD_IMAGE_NAME" .
+    - docker image push "$BUILD_IMAGE_NAME"
+
+release:
+  extends:
+    - .dind
+  stage: release
+  script:
+    - docker image pull "$BUILD_IMAGE_NAME"
+    - docker image tag "$BUILD_IMAGE_NAME" "$RELEASE_IMAGE_NAME:latest"
+    - docker image tag "$BUILD_IMAGE_NAME" "$RELEASE_IMAGE_NAME:$CI_COMMIT_TAG"
+    - docker image push "$RELEASE_IMAGE_NAME:latest"
+    - docker image push "$RELEASE_IMAGE_NAME:$CI_COMMIT_TAG"
+  only:
+    - tags
